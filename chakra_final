@@ -1,0 +1,53 @@
+VERSION 1.4
+Change to address CVE-2017-0067, CVE-2017-0150, CVE-2017-0138, CVE-2017-0094,
+       CVE-2017-0132, CVE-2017-0133, CVE-2017-0134, CVE-2017-0137,
+       CVE-2017-0071, CVE-2017-0151, CVE-2017-0141, CVE-2017-0196,
+       CVE-2017-0136, CVE-2017-0152, CVE-2017-0010, CVE-2017-0035,
+       CVE-2017-0015, CVE-2017-0028 #2697
+enables using ChakraCore NuGet packages for developing .NET and native
+applications (#2266, #85) and includes other bug fixes.
+ChakraCore JIT on Linux and MacOS #1591 #1744
+Enhance Time Travel Debugging support
+Enable Async Functions by default #1691
+Enable SharedArrayBuffer under experimental flag #1759
+Enable WebAssembly browser preview support under experimental flag #1985
+Update JSRT String APIs (experimental) #1830
+Memory reduction through function body redeferral #1585
+Add out-of-process JIT support in Microsoft Edge #1561
+
+VERSION 1.3
+Change to address bad binding of async arrow function parameters #2219
+Change to address CVE-2016-7207 #1979
+ChakraCore interpreter and runtime on x64 Linux (still working on JIT or
+    concurrent/partial GC)
+ChakraCore interpreter and runtime on x64 OSX (still working on JIT or
+    concurrent/partial GC)
+Enable Symbol.toStringTag by default #1383
+Enable String.prototype.padStart and String.prototype.padEnd by default #1257
+Enable Symbol.prototype[@@toPrimitive] and Date.prototype[@@toPrimitive] under
+experimental flag #1319
+Enable Symbol.isConcatSpreadable under experimental flag #1198
+Enable Symbol.hasInstance under experimental flag #1063
+Optimize creation of Heap arguments object (91e0e91)
+Add fastpath for when Object.hasOwnProperty returns true #1449
+Enable script function inlining in jitted loop bodies #1182
+JSRT Debugging APIs (experimental) #926
+JSRT Module API (experimental) #1254
+Introduce C++ unit testing mechanism using Catch #1224
+
+VERSION 1.2
+Change to address CVE-2016-7287,CVE-2016-7286,CVE-2016-7288,CVE-2016-7296 #2230
+Change to address CVE-2016-7200, CVE-2016-7201, CVE-2016-720, CVE-2016-7203,
+       CVE-2016-7208, CVE-2016-7240, CVE-2016-7241, CVE-2016-7242, CVE-2016-7243
+       #1942
+Fixed Address deref issue #1530
+Combined fixes for CVE-2016-3350, CVE-2016-3377 and a defense in depth
+       change in the CustomHeap (24c4d7d)
+Changes addressing CVE_2016-3382, CVE-2016-3385, CVE-2016-3386, CVE-2016-3389,
+CVE-2016-3390, CVE-2016-7189, and a mitigation of a CFG bypass. (f05c42e)
+Turn support for ES2015 Destructuring Assignment on by default
+Turn support for ES2015 Default Parameters on by default
+Turn support for the proposed ECMAScript Exponentiation Operator on by default
+Enable proposed ECMAScript Async Functions behind an experimental flag
+Enable ES2015 Modules behind an experimental flag
+Includes multiple changes to reduce memory consumption

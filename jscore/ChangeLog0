@@ -1,0 +1,479 @@
+2017-03-26  Filip Pizlo  <fpizlo@apple.com>
+
+        B3::fixSSA should do liveness pruning
+        https://bugs.webkit.org/show_bug.cgi?id=170111
+
+        Reviewed by Saam Barati.
+        
+        This moves all of the logic of Air::Liveness<> to WTF::Liveness<> and then uses that to
+        create B3::VariableLiveness. Then this uses VariableLiveness::LiveAtHead to prune Phi
+        construction.
+        
+        This makes B3::fixSSA run twice as fast. This is a 13% progression on WasmBench compile
+        times.
+
+        * CMakeLists.txt:
+        * JavaScriptCore.xcodeproj/project.pbxproj:
+        * b3/B3BasicBlock.h:
+        (JSC::B3::BasicBlock::get):
+        * b3/B3FixSSA.cpp:
+        (JSC::B3::fixSSA):
+        * b3/B3VariableLiveness.cpp: Added.
+        (JSC::B3::VariableLiveness::VariableLiveness):
+        (JSC::B3::VariableLiveness::~VariableLiveness):
+        * b3/B3VariableLiveness.h: Added.
+        (JSC::B3::VariableLivenessAdapter::VariableLivenessAdapter):
+        (JSC::B3::VariableLivenessAdapter::numIndices):
+        (JSC::B3::VariableLivenessAdapter::valueToIndex):
+        (JSC::B3::VariableLivenessAdapter::indexToValue):
+        (JSC::B3::VariableLivenessAdapter::blockSize):
+        (JSC::B3::VariableLivenessAdapter::forEachEarlyUse):
+        (JSC::B3::VariableLivenessAdapter::forEachLateUse):
+        (JSC::B3::VariableLivenessAdapter::forEachEarlyDef):
+        (JSC::B3::VariableLivenessAdapter::forEachLateDef):
+        * b3/air/AirCFG.h: Added.
+        (JSC::B3::Air::CFG::CFG):
+        (JSC::B3::Air::CFG::root):
+        (JSC::B3::Air::CFG::newMap):
+        (JSC::B3::Air::CFG::successors):
+        (JSC::B3::Air::CFG::predecessors):
+        (JSC::B3::Air::CFG::index):
+        (JSC::B3::Air::CFG::node):
+        (JSC::B3::Air::CFG::numNodes):
+        (JSC::B3::Air::CFG::dump):
+        * b3/air/AirCode.cpp:
+        (JSC::B3::Air::Code::Code):
+        * b3/air/AirCode.h:
+        (JSC::B3::Air::Code::cfg):
+        * b3/air/AirLiveness.h:
+        (JSC::B3::Air::LivenessAdapter::LivenessAdapter):
+        (JSC::B3::Air::LivenessAdapter::blockSize):
+        (JSC::B3::Air::LivenessAdapter::forEachEarlyUse):
+        (JSC::B3::Air::LivenessAdapter::forEachLateUse):
+        (JSC::B3::Air::LivenessAdapter::forEachEarlyDef):
+        (JSC::B3::Air::LivenessAdapter::forEachLateDef):
+        (JSC::B3::Air::TmpLivenessAdapter::TmpLivenessAdapter):
+        (JSC::B3::Air::TmpLivenessAdapter::numIndices):
+        (JSC::B3::Air::StackSlotLivenessAdapter::StackSlotLivenessAdapter):
+        (JSC::B3::Air::StackSlotLivenessAdapter::numIndices):
+        (JSC::B3::Air::StackSlotLivenessAdapter::indexToValue):
+        (JSC::B3::Air::Liveness::Liveness):
+        (JSC::B3::Air::Liveness::LocalCalc::LocalCalc): Deleted.
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::Iterable): Deleted.
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::iterator::iterator): Deleted.
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::iterator::operator++): Deleted.
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::iterator::operator*): Deleted.
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::iterator::operator==): Deleted.
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::iterator::operator!=): Deleted.
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::begin): Deleted.
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::end): Deleted.
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::contains): Deleted.
+        (JSC::B3::Air::Liveness::LocalCalc::live): Deleted.
+        (JSC::B3::Air::Liveness::LocalCalc::isLive): Deleted.
+        (JSC::B3::Air::Liveness::LocalCalc::execute): Deleted.
+        (JSC::B3::Air::Liveness::rawLiveAtHead): Deleted.
+        (JSC::B3::Air::Liveness::Iterable::Iterable): Deleted.
+        (JSC::B3::Air::Liveness::Iterable::iterator::iterator): Deleted.
+        (JSC::B3::Air::Liveness::Iterable::iterator::operator*): Deleted.
+        (JSC::B3::Air::Liveness::Iterable::iterator::operator++): Deleted.
+        (JSC::B3::Air::Liveness::Iterable::iterator::operator==): Deleted.
+        (JSC::B3::Air::Liveness::Iterable::iterator::operator!=): Deleted.
+        (JSC::B3::Air::Liveness::Iterable::begin): Deleted.
+        (JSC::B3::Air::Liveness::Iterable::end): Deleted.
+        (JSC::B3::Air::Liveness::Iterable::contains): Deleted.
+        (JSC::B3::Air::Liveness::liveAtHead): Deleted.
+        (JSC::B3::Air::Liveness::liveAtTail): Deleted.
+        (JSC::B3::Air::Liveness::workset): Deleted.
+
+2017-03-25  Filip Pizlo  <fpizlo@apple.com>
+
+        Air::Liveness shouldn't need HashSets
+        https://bugs.webkit.org/show_bug.cgi?id=170102
+
+        Reviewed by Yusuke Suzuki.
+        
+        This converts Air::Liveness<> to no longer use HashSets or BitVectors. This turns out to be
+        easy because it's cheap enough to do a sorted merge of the things being added to liveAtHead and
+        the things in the predecessors' liveAtTail. This turns out to be faster - it's a 2% overall
+        compile time progression on WasmBench.
+        
+        * b3/B3LowerToAir.cpp:
+        (JSC::B3::Air::LowerToAir::lower): Add a FIXME unrelated to this patch.
+        * b3/air/AirLiveness.h:
+        (JSC::B3::Air::AbstractLiveness::AbstractLiveness):
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::LocalCalc):
+        (JSC::B3::Air::AbstractLiveness::rawLiveAtHead):
+        (JSC::B3::Air::AbstractLiveness::liveAtHead):
+        (JSC::B3::Air::AbstractLiveness::liveAtTail):
+        * b3/air/AirTmp.h:
+        (JSC::B3::Air::Tmp::bank):
+        (JSC::B3::Air::Tmp::tmpIndex):
+        * dfg/DFGStoreBarrierClusteringPhase.cpp:
+
+2017-03-26  Filip Pizlo  <fpizlo@apple.com>
+
+        Air should use RegisterSet for RegLiveness
+        https://bugs.webkit.org/show_bug.cgi?id=170108
+
+        Reviewed by Yusuke Suzuki.
+        
+        The biggest change here is the introduction of the new RegLiveness class. This is a
+        drop-in replacement for the old RegLiveness, which was a specialization of
+        AbstractLiveness<>, but it's about 30% faster. It gets its speed boost from just using
+        sets everywhere, which is efficient for registers since RegisterSet is just two (on
+        x86-64) or three 32-bit (on ARM64) statically allocated words. This looks like a 1%
+        compile time progression on WasmBench.
+
+        * CMakeLists.txt:
+        * JavaScriptCore.xcodeproj/project.pbxproj:
+        * b3/B3TimingScope.cpp: Records phase timing totals.
+        (JSC::B3::TimingScope::TimingScope):
+        (JSC::B3::TimingScope::~TimingScope):
+        * b3/B3TimingScope.h:
+        * b3/air/AirAllocateRegistersByGraphColoring.cpp:
+        (JSC::B3::Air::allocateRegistersByGraphColoring):
+        * b3/air/AirLiveness.h: Move code around and rename a bit to make it more like RegLiveness; in particular we want the `iterator` to be called `iterator` not `Iterator`, and we want it to be internal to its iterable. Also rename this template to Liveness, to match the header filename.
+        (JSC::B3::Air::Liveness::Liveness):
+        (JSC::B3::Air::Liveness::LocalCalc::LocalCalc):
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::Iterable):
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::iterator::iterator):
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::iterator::operator++):
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::iterator::operator*):
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::iterator::operator==):
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::iterator::operator!=):
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::begin):
+        (JSC::B3::Air::Liveness::LocalCalc::Iterable::end):
+        (JSC::B3::Air::Liveness::Iterable::Iterable):
+        (JSC::B3::Air::Liveness::Iterable::iterator::iterator):
+        (JSC::B3::Air::RegLivenessAdapter::RegLivenessAdapter): Deleted.
+        (JSC::B3::Air::RegLivenessAdapter::numIndices): Deleted.
+        (JSC::B3::Air::RegLivenessAdapter::acceptsBank): Deleted.
+        (JSC::B3::Air::RegLivenessAdapter::acceptsRole): Deleted.
+        (JSC::B3::Air::RegLivenessAdapter::valueToIndex): Deleted.
+        (JSC::B3::Air::RegLivenessAdapter::indexToValue): Deleted.
+        (JSC::B3::Air::AbstractLiveness::AbstractLiveness): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::LocalCalc): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::Iterator::Iterator): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::Iterator::operator++): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::Iterator::operator*): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::Iterator::operator==): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::Iterator::operator!=): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::Iterable::Iterable): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::Iterable::begin): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::Iterable::end): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::Iterable::contains): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::live): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::isLive): Deleted.
+        (JSC::B3::Air::AbstractLiveness::LocalCalc::execute): Deleted.
+        (JSC::B3::Air::AbstractLiveness::rawLiveAtHead): Deleted.
+        (JSC::B3::Air::AbstractLiveness::Iterable::Iterable): Deleted.
+        (JSC::B3::Air::AbstractLiveness::Iterable::iterator::iterator): Deleted.
+        (JSC::B3::Air::AbstractLiveness::Iterable::iterator::operator*): Deleted.
+        (JSC::B3::Air::AbstractLiveness::Iterable::iterator::operator++): Deleted.
+        (JSC::B3::Air::AbstractLiveness::Iterable::iterator::operator==): Deleted.
+        (JSC::B3::Air::AbstractLiveness::Iterable::iterator::operator!=): Deleted.
+        (JSC::B3::Air::AbstractLiveness::Iterable::begin): Deleted.
+        (JSC::B3::Air::AbstractLiveness::Iterable::end): Deleted.
+        (JSC::B3::Air::AbstractLiveness::Iterable::contains): Deleted.
+        (JSC::B3::Air::AbstractLiveness::liveAtHead): Deleted.
+        (JSC::B3::Air::AbstractLiveness::liveAtTail): Deleted.
+        (JSC::B3::Air::AbstractLiveness::workset): Deleted.
+        * b3/air/AirLogRegisterPressure.cpp:
+        * b3/air/AirLowerAfterRegAlloc.cpp:
+        * b3/air/AirRegLiveness.cpp: Added.
+        (JSC::B3::Air::RegLiveness::RegLiveness):
+        (JSC::B3::Air::RegLiveness::~RegLiveness):
+        (JSC::B3::Air::RegLiveness::LocalCalc::execute):
+        * b3/air/AirRegLiveness.h: Added.
+        (JSC::B3::Air::RegLiveness::LocalCalc::LocalCalc):
+        (JSC::B3::Air::RegLiveness::LocalCalc::live):
+        (JSC::B3::Air::RegLiveness::LocalCalc::isLive):
+        (JSC::B3::Air::RegLiveness::liveAtHead):
+        (JSC::B3::Air::RegLiveness::liveAtTail):
+        * b3/air/AirReportUsedRegisters.cpp:
+        * jit/RegisterSet.h:
+        (JSC::RegisterSet::add):
+        (JSC::RegisterSet::remove):
+        (JSC::RegisterSet::contains):
+        (JSC::RegisterSet::subsumes):
+        (JSC::RegisterSet::iterator::iterator):
+        (JSC::RegisterSet::iterator::operator*):
+        (JSC::RegisterSet::iterator::operator++):
+        (JSC::RegisterSet::iterator::operator==):
+        (JSC::RegisterSet::iterator::operator!=):
+        (JSC::RegisterSet::begin):
+        (JSC::RegisterSet::end):
+
+2017-03-25  Filip Pizlo  <fpizlo@apple.com>
+
+        Fix wasm by returning after we do TLS.
+
+        Rubber stamped by Keith Miller.
+
+        * jit/AssemblyHelpers.h:
+        (JSC::AssemblyHelpers::storeWasmContext):
+
+2017-03-24  Mark Lam  <mark.lam@apple.com>
+
+        Add some instrumentation in Heap::resumeThePeriphery() to help debug an issue.
+        https://bugs.webkit.org/show_bug.cgi?id=170086
+        <rdar://problem/31253673>
+
+        Reviewed by Saam Barati.
+
+        Adding some instrumentation in Heap::resumeThePeriphery() to dump some Heap state
+        just before we RELEASE_ASSERT_NOT_REACHED.
+
+        * heap/Heap.cpp:
+        (JSC::Heap::resumeThePeriphery):
+
+2017-03-24  JF Bastien  <jfbastien@apple.com>
+
+        WebAssembly: store state in TLS instead of on VM
+        https://bugs.webkit.org/show_bug.cgi?id=169611
+
+        Reviewed by Filip Pizlo.
+
+        Using thread-local storage instead of VM makes code more position
+        independent. We used to store the WebAssembly top Instance (the
+        latest one in the call stack) on VM, now we instead store it in
+        TLS. This top Instance is used to access a bunch of state such as
+        Memory location, size, table (for call_indirect), etc.
+
+        Instead of calling it "top", which is confusing, we now just call
+        it WasmContext.
+
+        Making the code PIC means future patches will be able to
+        postMessage and structured clone into IDB without having to
+        recompile the code. This wasn't possible before because we
+        hard-coded the address of VM at compilation time. That doesn't
+        work between workers, and doesn't work across reloads (which IDB
+        is intended to do).
+
+        It'll also potentially make code faster once we start tuning
+        what's in TLS, what's in which of the 4 free slots, and what's in
+        pinned registers. I'm leaving this tuning for later because
+        there's lower lying fruit for us to pick.
+
+        * CMakeLists.txt:
+        * JavaScriptCore.xcodeproj/project.pbxproj:
+        * assembler/AbstractMacroAssembler.h:
+        * assembler/AllowMacroScratchRegisterUsageIf.h: Copied from assembler/AllowMacroScratchRegisterUsage.h.
+        (JSC::AllowMacroScratchRegisterUsageIf::AllowMacroScratchRegisterUsageIf):
+        (JSC::AllowMacroScratchRegisterUsageIf::~AllowMacroScratchRegisterUsageIf):
+        * assembler/MacroAssembler.h:
+        (JSC::MacroAssembler::storeToTLSPtr): we previously didn't have
+        the code required to store to TLS, only to load
+        * assembler/MacroAssemblerARM64.h:
+        (JSC::MacroAssemblerARM64::loadFromTLSPtrNeedsMacroScratchRegister):
+        (JSC::MacroAssemblerARM64::storeToTLS32):
+        (JSC::MacroAssemblerARM64::storeToTLS64):
+        (JSC::MacroAssemblerARM64::storeToTLSPtrNeedsMacroScratchRegister):
+        * assembler/MacroAssemblerX86Common.h:
+        (JSC::MacroAssemblerX86Common::loadFromTLSPtrNeedsMacroScratchRegister):
+        (JSC::MacroAssemblerX86Common::storeToTLS32):
+        (JSC::MacroAssemblerX86Common::storeToTLSPtrNeedsMacroScratchRegister):
+        * assembler/MacroAssemblerX86_64.h:
+        (JSC::MacroAssemblerX86_64::loadFromTLS64): was loading 32-bit instead of 64-bit
+        (JSC::MacroAssemblerX86_64::storeToTLS64):
+        * assembler/X86Assembler.h:
+        (JSC::X86Assembler::movl_rm):
+        (JSC::X86Assembler::movq_rm):
+        * b3/testb3.cpp:
+        (JSC::B3::testFastTLSLoad):
+        (JSC::B3::testFastTLSStore):
+        (JSC::B3::run):
+        * jit/AssemblyHelpers.h:
+        (JSC::AssemblyHelpers::loadWasmContext):
+        (JSC::AssemblyHelpers::storeWasmContext):
+        (JSC::AssemblyHelpers::loadWasmContextNeedsMacroScratchRegister):
+        (JSC::AssemblyHelpers::storeWasmContextNeedsMacroScratchRegister):
+        * jit/Repatch.cpp:
+        (JSC::webAssemblyOwner):
+        * jit/ThunkGenerators.cpp:
+        (JSC::throwExceptionFromWasmThunkGenerator):
+        * runtime/Options.h:
+        * runtime/VM.cpp:
+        (JSC::VM::VM):
+        * runtime/VM.h:
+        * wasm/WasmB3IRGenerator.cpp:
+        (JSC::Wasm::loadWasmContext):
+        (JSC::Wasm::storeWasmContext):
+        (JSC::Wasm::B3IRGenerator::B3IRGenerator):
+        (JSC::Wasm::getMemoryBaseAndSize):
+        (JSC::Wasm::restoreWebAssemblyGlobalState):
+        (JSC::Wasm::createJSToWasmWrapper):
+        (JSC::Wasm::parseAndCompile):
+        * wasm/WasmBinding.cpp:
+        (JSC::Wasm::materializeImportJSCell):
+        (JSC::Wasm::wasmToJs):
+        (JSC::Wasm::wasmToWasm):
+        * wasm/WasmContext.cpp: Added.
+        (JSC::loadWasmContext):
+        (JSC::storeWasmContext):
+        * wasm/WasmContext.h: Added. Replaces "top" JSWebAssemblyInstance.
+        * wasm/js/WebAssemblyFunction.cpp:
+        (JSC::callWebAssemblyFunction):
+        * wasm/js/WebAssemblyInstanceConstructor.h:
+
+2017-03-24  JF Bastien  <jfbastien@apple.com>
+
+        WebAssembly: spec-tests/memory.wast.js fails in debug
+        https://bugs.webkit.org/show_bug.cgi?id=169794
+
+        Reviewed by Keith Miller.
+
+        The failure was due to empty memories (with maximum size 0). Those
+        only occur in tests and in code that's trying to trip us. This
+        patch adds memory mode "none" which represents no memory. It can
+        work with either bounds checked or signaling code because it never
+        contains loads and stores.
+
+        The spec tests which were failing did the following:
+            > (module (memory (data)) (func (export "memsize") (result i32) (current_memory)))
+            > (assert_return (invoke "memsize") (i32.const 0))
+            > (module (memory (data "")) (func (export "memsize") (result i32) (current_memory)))
+            > (assert_return (invoke "memsize") (i32.const 0))
+            > (module (memory (data "x")) (func (export "memsize") (result i32) (current_memory)))
+            > (assert_return (invoke "memsize") (i32.const 1))
+
+        * wasm/WasmB3IRGenerator.cpp:
+        (JSC::Wasm::B3IRGenerator::memoryKind):
+        * wasm/WasmMemory.cpp:
+        (JSC::Wasm::tryGetFastMemory):
+        (JSC::Wasm::releaseFastMemory):
+        (JSC::Wasm::Memory::Memory):
+        (JSC::Wasm::Memory::createImpl):
+        (JSC::Wasm::Memory::create):
+        (JSC::Wasm::Memory::grow):
+        (JSC::Wasm::Memory::makeString):
+        * wasm/WasmMemory.h:
+        * wasm/WasmMemoryInformation.cpp:
+        (JSC::Wasm::MemoryInformation::MemoryInformation):
+        * wasm/js/JSWebAssemblyCodeBlock.cpp:
+        (JSC::JSWebAssemblyCodeBlock::isSafeToRun):
+        * wasm/js/JSWebAssemblyModule.cpp:
+        (JSC::JSWebAssemblyModule::codeBlock):
+        (JSC::JSWebAssemblyModule::finishCreation):
+        * wasm/js/JSWebAssemblyModule.h:
+        (JSC::JSWebAssemblyModule::codeBlock):
+        (JSC::JSWebAssemblyModule::codeBlockFor):
+
+2017-03-24  Mark Lam  <mark.lam@apple.com>
+
+        Array memcpy'ing fast paths should check if we're having a bad time if they cannot handle it.
+        https://bugs.webkit.org/show_bug.cgi?id=170064
+        <rdar://problem/31246098>
+
+        Reviewed by Geoffrey Garen.
+
+        * runtime/ArrayPrototype.cpp:
+        (JSC::arrayProtoPrivateFuncConcatMemcpy):
+        * runtime/JSArray.cpp:
+        (JSC::JSArray::fastSlice):
+
+2017-03-23  Yusuke Suzuki  <utatane.tea@gmail.com>
+
+        [JSC] Use jsNontrivialString agressively for ToString(Int52)
+        https://bugs.webkit.org/show_bug.cgi?id=170002
+
+        Reviewed by Sam Weinig.
+
+        We use the same logic used for Int32 to use jsNontvirialString.
+        After single character check, produced string is always longer than 1.
+        Thus, we can use jsNontrivialString.
+
+        * runtime/NumberPrototype.cpp:
+        (JSC::int52ToString):
+
+2017-03-23  Yusuke Suzuki  <utatane.tea@gmail.com>
+
+        [JSC] Use WeakRandom for SamplingProfiler interval fluctuation
+        https://bugs.webkit.org/show_bug.cgi?id=170045
+
+        Reviewed by Mark Lam.
+
+        It is unnecessary to use cryptographicallyRandomNumber for SamplingProfiler
+        interval fluctuation. Use WeakRandom instead.
+
+        * runtime/SamplingProfiler.cpp:
+        (JSC::SamplingProfiler::SamplingProfiler):
+        (JSC::SamplingProfiler::timerLoop):
+        * runtime/SamplingProfiler.h:
+
+2017-03-23  Mark Lam  <mark.lam@apple.com>
+
+        Array.prototype.splice behaves incorrectly when the VM is "having a bad time".
+        https://bugs.webkit.org/show_bug.cgi?id=170025
+        <rdar://problem/31228679>
+
+        Reviewed by Saam Barati.
+
+        * runtime/ArrayPrototype.cpp:
+        (JSC::copySplicedArrayElements):
+        (JSC::arrayProtoFuncSplice):
+
+2017-03-23  Yusuke Suzuki  <utatane.tea@gmail.com>
+
+        [JSC][DFG] Make addShouldSpeculateAnyInt more conservative to avoid regression caused by Double <-> Int52 conversions
+        https://bugs.webkit.org/show_bug.cgi?id=169998
+
+        Reviewed by Saam Barati.
+
+        Double <-> Int52 and JSValue <-> Int52 conversions are not so cheap. Thus, Int52Rep is super carefully emitted.
+        We make addShouldSpeculateAnyInt more conservative to avoid regressions caused by the above conversions.
+        We select ArithAdd(Int52, Int52) only when this calculation is beneficial compared to added Int52Rep conversions.
+
+        This patch tighten the conditions of addShouldSpeculateAnyInt.
+
+        1. Honor DoubleConstant.
+
+        When executing imaging-darkroom, we have a thing like that,
+
+            132:< 2:loc36> DoubleConstant(Double|UseAsOther, AnyIntAsDouble, Double: 4607182418800017408, 1.000000, bc#114)
+            1320:< 1:loc38>        Int52Rep(Check:Int32:@82, Int52|PureInt, Int32, Exits, bc#114)
+            1321:< 1:loc39>        Int52Constant(Int52|PureInt, Boolint32Nonboolint32Int52, Double: 4607182418800017408, 1.000000, bc#114)
+            133:<!3:loc39> ArithSub(Int52Rep:@1320<Int52>, Int52Rep:@1321<Int52>, Int52|MustGen, Int52, CheckOverflow, Exits, bc#114)
+
+        The LHS of ArithSub says predicting Boolint32, and the rhs says AnyIntAsDouble. Thus we select ArithSub(Int52, Int52) instead
+        of ArithSub(Double, Double). However, it soon causes OSR exits. In imaging-darkroom, LHS's Int32 prediction will be broken.
+        While speculating Int32 in the above situation is reasonable approach since the given LHS says predicting Int32, this causes
+        severe performance regression.
+
+        Previously, we always select ArithSub(Double, Double). So accidentally, we do not encounter this misprediction issue.
+
+        One thing can be found that we have DoubleConstant in the RHS. It means that we have `1.0` instead of `1` in the code.
+        We can see the code like `lhs - 1.0` instead of `lhs - 1` in imaging-darkroom. It offers good information that lhs and
+        the resulting value would be double. Handling the above ArithSub in double seems more appropriate rather than handling
+        it in Int52.
+
+        So, in this patch, we honor DoubleConstant. If we find DoubleConstant on one operand, we give up selecting
+        Arith[Sub,Add](Int52, Int52). This change removes OSR exits occurr in imaging-darkroom right now.
+
+        2. Two Int52Rep(Double) conversions are not desirable.
+
+        We allow AnyInt ArithAdd only when the one operand of the binary operation should be speculated AnyInt. It is a bit conservative
+        decision. This is because Double to Int52 conversion is not so cheap. Frequent back-and-forth conversions between Double and Int52
+        rather hurt the performance. If the one operand of the operation is already Int52, the cost for constructing ArithAdd becomes
+        cheap since only one Double to Int52 conversion could be required.
+        This recovers some regression in assorted tests while keeping kraken crypto improvements.
+
+        3. Avoid frequent Int52 to JSValue conversions.
+
+        Int52 to JSValue conversion is not so cheap. Thus, we would like to avoid such situations. So, in this patch, we allow
+        Arith(Int52, Int52) with AnyIntAsDouble operand only when the node is used as number. By doing so, we avoid the case like,
+        converting Int52, performing ArithAdd, and soon converting back to JSValue.
+
+        The above 3 changes recover the regression measured in microbenchmarks/int52-back-and-forth.js and assorted benchmarks.
+        And still it keeps kraken crypto improvements.
+
+                                                   baseline                  patched
+
+        imaging-darkroom                       201.112+-3.192      ^     189.532+-2.883         ^ definitely 1.0611x faster
+        stanford-crypto-pbkdf2                 103.953+-2.325            100.926+-2.396           might be 1.0300x faster
+        stanford-crypto-sha256-iterative        35.103+-1.071      ?      36.049+-1.143         ? might be 1.0270x slower
+
+        * dfg/DFGGraph.h:
+        (JSC::DFG::Graph::addShouldSpeculateAnyInt):
+
+== Rolled over to ChangeLog-2017-03-23 ==
